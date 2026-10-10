@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Automatic backup system - serverless pipeline (S3 -> S3, logged, alerted)
+
+Resources:
+
+  SourceBucket:
+    Type: AWS::S3::Bucket
+
+  BackupBucket:
+    Type: AWS::S3::Bucket
+
+  BackupHistoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: backupId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: backupId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref NotificationTopic
+      Protocol: email
+      Endpoint: skhole43@gmail.com  
+
+  BackupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      CodeUri: src/
+      Timeout: 30
+      Environment:
+        Variables:
+          SOURCE_BUCKET: !Ref SourceBucket
+          BACKUP_BUCKET: !Ref BackupBucket
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+          TABLE_NAME: !Ref BackupHistoryTable
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref SourceBucket
+        - S3CrudPolicy:
+            BucketName: !Ref BackupBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BackupHistoryTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NotificationTopic.TopicName
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+
+Outputs:
+  SourceBucketName:
+    Value: !Ref SourceBucket
+  BackupBucketName:
+    Value: !Ref BackupBucket
